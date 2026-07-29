@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>瑪奇 Mobile 商店購物 To-Do List</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --card-bg: #ffffff;
+      --primary: #4a90e2;
+      --text: #333333;
+      --text-muted: #888888;
+      --border: #e1e4e8;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 12px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    .header {
+      background: var(--card-bg);
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      margin-bottom: 16px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      margin: 0 0 12px 0;
+      text-align: center;
+      color: #2c3e50;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    .btn-daily {
+      background-color: #2eb85c;
+      color: white;
+    }
+
+    .btn-weekly {
+      background-color: #39f;
+      color: white;
+    }
+
+    button:active {
+      opacity: 0.8;
+    }
+
+    button:disabled {
+      background-color: #ccc;
+      cursor: not-allowed;
+    }
+
+    .status-bar {
+      margin-top: 10px;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .todo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .todo-item {
+      background: var(--card-bg);
+      padding: 12px 14px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      transition: all 0.2s ease;
+      border-left: 4px solid var(--primary);
+    }
+
+    .todo-item.done {
+      opacity: 0.55;
+      background: #eef1f4;
+      border-left-color: #b0bec5;
+    }
+
+    .todo-item.done .item-title {
+      text-decoration: line-through;
+      color: var(--text-muted);
+    }
+
+    input[type="checkbox"] {
+      width: 22px;
+      height: 22px;
+      cursor: pointer;
+      accent-color: var(--primary);
+    }
+
+    .item-info {
+      flex: 1;
+    }
+
+    .item-title {
+      font-weight: bold;
+      font-size: 1rem;
+      margin-bottom: 4px;
+    }
+
+    .item-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .tag {
+      background: #eef2f7;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+    }
+
+    .tag-daily { color: #2e7d32; background: #e8f5e9; }
+    .tag-weekly { color: #1565c0; background: #e3f2fd; }
+
+    .loader {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>🛒 瑪奇 Mobile 商店購物清單</h1>
+    <div class="btn-group">
+      <button id="btn-daily" class="btn-daily" onclick="resetItems('reset_daily')">🔄 每天刷新</button>
+      <button id="btn-weekly" class="btn-weekly" onclick="resetItems('reset_weekly')">🔄 每週刷新</button>
+    </div>
+    <div id="status-msg" class="status-bar">資料載入中...</div>
+  </div>
+
+  <div id="todo-container" class="todo-list">
+    <div class="loader">讀取 Google Sheet 資料中...</div>
+  </div>
+
+  <script>
+    // ⚠️ 請替換為你部署的 Google Apps Script Web App URL
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxcgU1p73QyK1P5NLvrY2TG5DWyM5skdL3KjbOEyZ8KAEJbZcMbvmqmj69swhPCxRivDg/exec';
+
+    let itemsData = [];
+
+    // 1. 初始化讀取資料
+    async function loadData() {
+      setStatus('正從 Google Sheet 獲取最新資料...');
+      try {
+        const res = await fetch(API_URL);
+        itemsData = await res.json();
+        renderList();
+        setStatus('資料已是最新');
+      } catch (err) {
+        setStatus('載入失敗，請檢查網路或 API 設定');
+        console.error(err);
+      }
+    }
+
+    // 2. 渲染 UI
+    function renderList() {
+      const container = document.getElementById('todo-container');
+      if (itemsData.length === 0) {
+        container.innerHTML = '<div class="loader">暫無資料</div>';
+        return;
+      }
+
+      container.innerHTML = itemsData.map(item => {
+        const isDone = item.status === '售完';
+        const tagClass = item.reset === '每天' ? 'tag-daily' : 'tag-weekly';
+        
+        return `
+          <div class="todo-item ${isDone ? 'done' : ''}" id="item-${item.rowIndex}">
+            <input type="checkbox" ${isDone ? 'checked' : ''} onchange="toggleItem(${item.rowIndex}, this.checked)">
+            <div class="item-info">
+              <div class="item-title">
+                ${item.star ? item.star + ' ' : ''}${item.item} 
+                <small style="font-weight:normal;">x${item.qty}</small>
+              </div>
+              <div class="item-meta">
+                <span>📍 ${item.region} - ${item.npc}</span>
+                ${item.exchange ? `<span>🔄 換: ${item.exchange}</span>` : ''}
+                <span>限制: ${item.limit}次</span>
+                <span class="tag ${tagClass}">${item.reset}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 3. 切換單項狀態 (勾選 / 取消勾選)
+    async function toggleItem(rowIndex, isChecked) {
+      const newStatus = isChecked ? '售完' : '有貨';
+      
+      // 先更新本地 UI，提升順暢度
+      const item = itemsData.find(i => i.rowIndex === rowIndex);
+      if (item) item.status = newStatus;
+      renderList();
+
+      setStatus('更新中...');
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({
+            action: 'toggle',
+            rowIndex: rowIndex,
+            status: newStatus
+          })
+        });
+        setStatus('已同步至 Google Sheet');
+      } catch (err) {
+        setStatus('同步失敗');
+        console.error(err);
+      }
+    }
+
+    // 4. 批次刷新 (每天刷新 / 每週刷新)
+    async function resetItems(actionType) {
+      const label = actionType === 'reset_daily' ? '每天' : '每週';
+      if (!confirm(`確定要將所有【${label}】的物品重置為未購買狀態嗎？`)) return;
+
+      setButtonsDisabled(true);
+      setStatus(`正在重置所有【${label}】物品...`);
+
+      // 先更新本地 UI
+      itemsData.forEach(item => {
+        if ((actionType === 'reset_daily' && item.reset === '每天') ||
+            (actionType === 'reset_weekly' && item.reset === '每週')) {
+          item.status = '有貨';
+        }
+      });
+      renderList();
+
+      try {
+        await fetch(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: actionType })
+        });
+        setStatus(`【${label}】物品重置完成並已同步`);
+      } catch (err) {
+        setStatus('重置失敗');
+        console.error(err);
+      } finally {
+        setButtonsDisabled(false);
+      }
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status-msg').innerText = msg;
+    }
+
+    function setButtonsDisabled(disabled) {
+      document.getElementById('btn-daily').disabled = disabled;
+      document.getElementById('btn-weekly').disabled = disabled;
+    }
+
+    // 頁面載入時執行
+    loadData();
+  </script>
+</body>
+</html>
