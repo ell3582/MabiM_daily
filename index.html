@@ -40,6 +40,30 @@
       color: #2c3e50;
     }
 
+    /* 下拉選單樣式 */
+    .sheet-selector {
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .sheet-selector label {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: var(--text);
+    }
+
+    .sheet-selector select {
+      flex: 1;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 0.95rem;
+      background-color: #fff;
+      cursor: pointer;
+    }
+
     .btn-group {
       display: flex;
       gap: 10px;
@@ -56,24 +80,10 @@
       transition: background 0.2s, opacity 0.2s;
     }
 
-    .btn-daily {
-      background-color: #2eb85c;
-      color: white;
-    }
-
-    .btn-weekly {
-      background-color: #39f;
-      color: white;
-    }
-
-    button:active {
-      opacity: 0.8;
-    }
-
-    button:disabled {
-      background-color: #ccc;
-      cursor: not-allowed;
-    }
+    .btn-daily { background-color: #2eb85c; color: white; }
+    .btn-weekly { background-color: #39f; color: white; }
+    button:active { opacity: 0.8; }
+    button:disabled { background-color: #ccc; cursor: not-allowed; }
 
     .status-bar {
       margin-top: 10px;
@@ -118,16 +128,8 @@
       accent-color: var(--primary);
     }
 
-    .item-info {
-      flex: 1;
-    }
-
-    .item-title {
-      font-weight: bold;
-      font-size: 1rem;
-      margin-bottom: 4px;
-    }
-
+    .item-info { flex: 1; }
+    .item-title { font-weight: bold; font-size: 1rem; margin-bottom: 4px; }
     .item-meta {
       font-size: 0.8rem;
       color: var(--text-muted);
@@ -136,27 +138,30 @@
       gap: 8px;
     }
 
-    .tag {
-      background: #eef2f7;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.75rem;
-    }
-
+    .tag { padding: 2px 6px; border-radius: 4px; font-size: 0.75rem; }
     .tag-daily { color: #2e7d32; background: #e8f5e9; }
     .tag-weekly { color: #1565c0; background: #e3f2fd; }
 
-    .loader {
-      text-align: center;
-      padding: 40px;
-      color: var(--text-muted);
-    }
+    .loader { text-align: center; padding: 40px; color: var(--text-muted); }
   </style>
 </head>
 <body>
 
   <div class="header">
     <h1>🛒 瑪奇 Mobile 商店購物清單</h1>
+    
+    <!-- 1. 下拉式選單 (可自行增減分頁 option) -->
+    <div class="sheet-selector">
+      <label for="sheet-select">分頁：</label>
+      <select id="sheet-select" onchange="loadData()">
+        <option value="Sheet1">Sheet1</option>
+        <option value="Sheet2">Sheet2</option>
+        <!-- 如果你 Google Sheet 分頁改咗名，請把 value 改成你 Sheet 嘅真實名稱，例如： -->
+        <!-- <option value="瑪奇">瑪奇</option> -->
+        <!-- <option value="分身帳號">分身帳號</option> -->
+      </select>
+    </div>
+
     <div class="btn-group">
       <button id="btn-daily" class="btn-daily" onclick="resetItems('reset_daily')">🔄 每天刷新</button>
       <button id="btn-weekly" class="btn-weekly" onclick="resetItems('reset_weekly')">🔄 每週刷新</button>
@@ -169,47 +174,58 @@
   </div>
 
   <script>
-    // ⚠️ 請替換為你部署的 Google Apps Script Web App URL
-    const API_URL = 'https://script.google.com/macros/s/AKfycbxcgU1p73QyK1P5NLvrY2TG5DWyM5skdL3KjbOEyZ8KAEJbZcMbvmqmj69swhPCxRivDg/exec';
-
+    const API_URL = 'https://script.google.com/macros/s/AKfycbxcgU1p73QyK1P5NLvrY2TG5DWyM5skdL3KjbOEyZ8KAEJbZcMbvmqmj69swhPCxRivDg/exec'; // ⚠️ 貼上你的 Web App URL
     let itemsData = [];
 
-    // 1. 優化後的載入資料 (Stale-While-Revalidate 模式)
-async function loadData() {
-  // A. 先讀取 LocalStorage 快取 (實現 0 秒畫面顯示)
-  const cachedData = localStorage.getItem('mabi_shop_data');
-  if (cachedData) {
-    try {
-      itemsData = JSON.parse(cachedData);
-      renderList();
-      setStatus('已顯示快取資料，背景更新中...');
-    } catch(e) {}
-  } else {
-    setStatus('正從 Google Sheet 獲取最新資料...');
-  }
+    // 取得當前選取的分頁名稱
+    function getSelectedSheet() {
+      return document.getElementById('sheet-select').value;
+    }
 
-  // B. 背景抓取最新資料
-  try {
-    const res = await fetch(API_URL);
-    const freshData = await res.json();
-    
-    itemsData = freshData;
-    // 儲存最新資料到 LocalStorage
-    localStorage.setItem('mabi_shop_data', JSON.stringify(freshData));
-    
-    renderList();
-    setStatus('資料已是最新');
-  } catch (err) {
-    if (!cachedData) setStatus('載入失敗，請檢查網路');
-    console.error(err);
-  }
-}
+    // 1. 載入資料 (包含快取與指定 Sheet)
+    async function loadData() {
+      const currentSheet = getSelectedSheet();
+      const cacheKey = 'mabi_shop_data_' + currentSheet;
+
+      // A. 先讀取 LocalStorage 快取
+      const cachedData = localStorage.getItem(cacheKey);
+      if (cachedData) {
+        try {
+          itemsData = JSON.parse(cachedData);
+          renderList();
+          setStatus(`已顯示 [${currentSheet}] 快取，背景更新中...`);
+        } catch(e) {}
+      } else {
+        document.getElementById('todo-container').innerHTML = '<div class="loader">讀取資料中...</div>';
+        setStatus(`正讀取 [${currentSheet}] 資料...`);
+      }
+
+      // B. 向 API 抓取最新資料
+      try {
+        const res = await fetch(`${API_URL}?sheet=${encodeURIComponent(currentSheet)}`);
+        const freshData = await res.json();
+        
+        if (freshData.error) {
+          setStatus(`錯誤: ${freshData.error}`);
+          return;
+        }
+
+        itemsData = freshData;
+        localStorage.setItem(cacheKey, JSON.stringify(freshData));
+        
+        renderList();
+        setStatus(`[${currentSheet}] 資料已是最新`);
+      } catch (err) {
+        if (!cachedData) setStatus('載入失敗，請檢查網路');
+        console.error(err);
+      }
+    }
 
     // 2. 渲染 UI
     function renderList() {
       const container = document.getElementById('todo-container');
-      if (itemsData.length === 0) {
-        container.innerHTML = '<div class="loader">暫無資料</div>';
+      if (!itemsData || itemsData.length === 0) {
+        container.innerHTML = '<div class="loader">此工作表暫無資料</div>';
         return;
       }
 
@@ -237,11 +253,11 @@ async function loadData() {
       }).join('');
     }
 
-    // 3. 切換單項狀態 (勾選 / 取消勾選)
+    // 3. 切換單項狀態
     async function toggleItem(rowIndex, isChecked) {
+      const currentSheet = getSelectedSheet();
       const newStatus = isChecked ? '售完' : '有貨';
       
-      // 先更新本地 UI，提升順暢度
       const item = itemsData.find(i => i.rowIndex === rowIndex);
       if (item) item.status = newStatus;
       renderList();
@@ -253,11 +269,12 @@ async function loadData() {
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body: JSON.stringify({
             action: 'toggle',
+            sheet: currentSheet,
             rowIndex: rowIndex,
             status: newStatus
           })
         });
-        setStatus('已同步至 Google Sheet');
+        setStatus(`[${currentSheet}] 已同步至 Google Sheet`);
       } catch (err) {
         setStatus('同步失敗');
         console.error(err);
@@ -308,7 +325,6 @@ async function loadData() {
         console.error(err);
       });
     }
-
     function setStatus(msg) {
       document.getElementById('status-msg').innerText = msg;
     }
@@ -318,7 +334,6 @@ async function loadData() {
       document.getElementById('btn-weekly').disabled = disabled;
     }
 
-    // 頁面載入時執行
     loadData();
   </script>
 </body>
