@@ -174,19 +174,36 @@
 
     let itemsData = [];
 
-    // 1. 初始化讀取資料
-    async function loadData() {
-      setStatus('正從 Google Sheet 獲取最新資料...');
-      try {
-        const res = await fetch(API_URL);
-        itemsData = await res.json();
-        renderList();
-        setStatus('資料已是最新');
-      } catch (err) {
-        setStatus('載入失敗，請檢查網路或 API 設定');
-        console.error(err);
-      }
-    }
+    // 1. 優化後的載入資料 (Stale-While-Revalidate 模式)
+async function loadData() {
+  // A. 先讀取 LocalStorage 快取 (實現 0 秒畫面顯示)
+  const cachedData = localStorage.getItem('mabi_shop_data');
+  if (cachedData) {
+    try {
+      itemsData = JSON.parse(cachedData);
+      renderList();
+      setStatus('已顯示快取資料，背景更新中...');
+    } catch(e) {}
+  } else {
+    setStatus('正從 Google Sheet 獲取最新資料...');
+  }
+
+  // B. 背景抓取最新資料
+  try {
+    const res = await fetch(API_URL);
+    const freshData = await res.json();
+    
+    itemsData = freshData;
+    // 儲存最新資料到 LocalStorage
+    localStorage.setItem('mabi_shop_data', JSON.stringify(freshData));
+    
+    renderList();
+    setStatus('資料已是最新');
+  } catch (err) {
+    if (!cachedData) setStatus('載入失敗，請檢查網路');
+    console.error(err);
+  }
+}
 
     // 2. 渲染 UI
     function renderList() {
