@@ -264,36 +264,49 @@ async function loadData() {
       }
     }
 
-    // 4. 批次刷新 (每天刷新 / 每週刷新)
-    async function resetItems(actionType) {
+    // 4. 批次刷新 (前端 0 秒響應，背景非同步寫入 Sheet)
+    function resetItems(actionType) {
+      const currentSheet = getSelectedSheet();
       const label = actionType === 'reset_daily' ? '每天' : '每週';
-      if (!confirm(`確定要將所有【${label}】的物品重置為未購買狀態嗎？`)) return;
-
-      setButtonsDisabled(true);
-      setStatus(`正在重置所有【${label}】物品...`);
-
-      // 先更新本地 UI
+      if (!confirm(`確定要重置 [${currentSheet}] 所有【${label}】的物品嗎？`)) return;
+    
+      // ① 瞬間更新本地記憶體資料
       itemsData.forEach(item => {
         if ((actionType === 'reset_daily' && item.reset === '每天') ||
-            (actionType === 'reset_weekly' && item.reset === '每週')) {
+            (actionType === 'reset_weekly' && (item.reset === '每天' || item.reset === '每週'))) {
           item.status = '有貨';
         }
       });
+    
+      // ② 瞬間更新 LocalStorage 快取 (確保重新整理網頁都係最新)
+      const cacheKey = 'mabi_shop_data_' + currentSheet;
+      localStorage.setItem(cacheKey, JSON.stringify(itemsData));
+    
+      // ③ 瞬間重新渲染畫面 (使用者體感 0 秒完成！)
       renderList();
-
-      try {
-        await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: actionType })
-        });
-        setStatus(`【${label}】物品重置完成並已同步`);
-      } catch (err) {
-        setStatus('重置失敗');
+      setStatus(`已重置！背景同步至 Google Sheet 中...`);
+    
+      // ④ 背景發送請求 (移除 await，不鎖死 UI)
+      fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: actionType,
+          sheet: currentSheet
+        })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.status === 'success') {
+          setStatus(`[${currentSheet}] Google Sheet 背景同步完成！`);
+        } else {
+          setStatus(`背景同步提示: ${data.message || '請檢查權限'}`);
+        }
+      })
+      .catch(err => {
+        setStatus('背景同步失敗，請檢查網路');
         console.error(err);
-      } finally {
-        setButtonsDisabled(false);
-      }
+      });
     }
 
     function setStatus(msg) {
